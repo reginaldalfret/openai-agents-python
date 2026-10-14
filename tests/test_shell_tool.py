@@ -287,6 +287,43 @@ async def test_shell_tool_structured_output_is_rendered() -> None:
 
 
 @pytest.mark.asyncio
+async def test_shell_tool_empty_structured_output_does_not_fabricate_stdout() -> None:
+    shell_tool = ShellTool(
+        executor=lambda request: ShellResult(
+            output=[],
+            max_output_length=4096,
+        )
+    )
+
+    tool_call = _shell_call()
+    tool_call["action"]["commands"] = ["true"]
+    tool_call["action"]["max_output_length"] = 4096
+
+    tool_run = ToolRunShellCall(tool_call=tool_call, shell_tool=shell_tool)
+    agent = Agent(name="shell-agent", tools=[shell_tool])
+    context_wrapper: RunContextWrapper[Any] = RunContextWrapper(context=None)
+
+    result = await ShellAction.execute(
+        agent=agent,
+        call=tool_run,
+        hooks=RunHooks[Any](),
+        context_wrapper=context_wrapper,
+        config=RunConfig(),
+    )
+
+    assert isinstance(result, ToolCallOutputItem)
+    raw_item = cast(dict[str, Any], result.raw_item)
+    assert raw_item["type"] == "shell_call_output"
+    assert raw_item["status"] == "completed"
+    assert raw_item["output"] == []
+    assert "shell_output" not in raw_item
+    input_payload = result.to_input_item()
+    assert isinstance(input_payload, dict)
+    assert input_payload["output"] == []
+
+
+
+@pytest.mark.asyncio
 async def test_shell_tool_emits_function_span() -> None:
     shell_tool = ShellTool(executor=lambda request: "shell span output")
     tool_run = ToolRunShellCall(tool_call=_shell_call("call_shell_trace"), shell_tool=shell_tool)
